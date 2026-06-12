@@ -1,5 +1,7 @@
 # 통합 AI 에이전트 서비스 기획서
 
+<img width="1920" height="1020" alt="Image" src="https://github.com/user-attachments/assets/24c4179d-e0e3-4d7a-a808-e8fa5b9ffdf9" />
+
 ## 1. 핵심 목표
 
 - 로컬 Ollama와 Flask를 연결해 통합 웹 AI 서비스를 구현한다.
