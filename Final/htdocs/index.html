@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>통합 AI 에이전트 서비스</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: linear-gradient(135deg, #08111f, #111827); color: #eff6ff; }
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .card { background: rgba(15,23,42,0.94); border: 1px solid #334155; border-radius: 18px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+    h1, h2 { margin-top: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip { border: 1px solid #475569; border-radius: 999px; padding: 8px 10px; background: #111827; cursor: pointer; }
+    .chip.active { background: #38bdf8; color: #082f49; font-weight: 700; }
+    textarea { width: 100%; min-height: 180px; border-radius: 12px; border: 1px solid #475569; background: #0f172a; color: #eff6ff; padding: 10px; box-sizing: border-box; }
+    button { background: linear-gradient(135deg, #38bdf8, #818cf8); color: #082f49; border: none; padding: 10px 14px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+    .result-box { background: #111827; border: 1px solid #334155; border-radius: 14px; padding: 12px; white-space: pre-wrap; line-height: 1.6; }
+    .small { color: #bfdbfe; font-size: 13px; }
+    .meeting-grid { display: grid; gap: 12px; }
+    .meeting-card { background: linear-gradient(135deg, #172554, #111827); border: 1px solid #334155; border-radius: 14px; padding: 12px; }
+    .meeting-card h3 { margin: 0 0 6px; font-size: 15px; color: #bae6fd; }
+    .meeting-card p, .meeting-card li { color: #e5eefb; line-height: 1.5; }
+    .meeting-card ul { margin: 6px 0 0 18px; padding: 0; }
+    .progress-wrap { margin-top: 10px; display: none; }
+    .progress-bar { width: 100%; height: 10px; background: #1f2937; border-radius: 999px; overflow: hidden; border: 1px solid #475569; }
+    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #818cf8); transition: width 0.2s ease; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <h1>통합 AI 에이전트 서비스</h1>
+      <p>학습 도우미 / 회의록 요약 / 여행·맛집 추천 / 이력서 코치 기능을 한 번에 체험할 수 있습니다.</p>
+      <div class="chip-row" id="modeButtons">
+        <button class="chip active" data-mode="study">AI 개인 학습 도우미</button>
+        <button class="chip" data-mode="meeting">AI 회의록 요약 & 액션 아이템</button>
+        <button class="chip" data-mode="travel">AI 여행/맛집 추천 서비스</button>
+        <button class="chip" data-mode="resume">AI 이력서/자소서 코치</button>
+      </div>
+      <label for="inputText" id="modeLabel">학습 내용</label>
+      <textarea id="inputText" placeholder="여기에 입력하세요"></textarea>
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button id="runBtn">실행하기</button>
+        <span class="small">Ollama가 실행 중이어야 합니다.</span>
+      </div>
+      <div id="progressWrap" class="progress-wrap">
+        <div class="small" id="progressText">응답 생성 중...</div>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>결과</h2>
+        <div id="result" class="result-box">아직 결과가 없습니다.</div>
+      </article>
+      <article class="card">
+        <h2>사용 예시</h2>
+        <div id="guide" class="result-box"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const modeButtons = document.querySelectorAll('.chip');
+    const modeLabel = document.getElementById('modeLabel');
+    const inputText = document.getElementById('inputText');
+    const guide = document.getElementById('guide');
+    const result = document.getElementById('result');
+    const runBtn = document.getElementById('runBtn');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    let currentMode = 'study';
+
+    const examples = {
+      study: '예: 인공지능의 기본 개념, 머신러닝과 딥러닝의 차이, 지도학습과 비지도학습을 설명해줘.',
+      meeting: '예: 오늘 회의에서는 서비스 출시 일정과 마케팅 예산을 논의했으며, 다음 주까지 사용자 테스트 결과를 정리하기로 했다.',
+      travel: '예: 서울에서 조용한 카페, 저렴한 식사, 야경이 좋은 곳을 찾고 싶어요. 2인 기준으로 추천해줘.',
+      resume: '예: 저는 스타트업에서 고객 데이터를 분석하고 서비스 개선을 담당한 경험이 있습니다. 이 문장을 더 강하게 수정해줘.'
+    };
+
+    function renderResult(text, mode) {
+      if (mode === 'meeting') {
+        try {
+          const data = JSON.parse(text);
+          const summary = data.summary || '요약 결과가 없습니다.';
+          const keyPoints = Array.isArray(data.key_points) ? data.key_points : [];
+          const actions = Array.isArray(data.action_items) ? data.action_items : [];
+
+          result.innerHTML = `
+            <div class="meeting-grid">
+              <article class="meeting-card">
+                <h3>요약</h3>
+                <p>${summary}</p>
+              </article>
+              <article class="meeting-card">
+                <h3>핵심 포인트</h3>
+                <ul>${keyPoints.map(item => `<li>${item}</li>`).join('')}</ul>
+              </article>
+              <article class="meeting-card">
+                <h3>액션 아이템</h3>
+                <ul>${actions.map(item => `<li>${item}</li>`).join('')}</ul>
+              </article>
+            </div>`;
+          return;
+        } catch (e) {
+          // JSON 파싱 실패 시 텍스트로 fallback
+        }
+      }
+
+      result.textContent = text || '아직 결과가 없습니다.';
+    }
+
+    function updateMode(mode) {
+      currentMode = mode;
+      modeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+      const labels = {
+        study: '학습 내용',
+        meeting: '회의록 내용',
+        travel: '취향/요청 내용',
+        resume: '이력서/자소서 문장'
+      };
+      modeLabel.textContent = labels[mode];
+      inputText.placeholder = examples[mode];
+      guide.textContent = '예시:\n' + examples[mode];
+    }
+
+    modeButtons.forEach(btn => btn.addEventListener('click', () => updateMode(btn.dataset.mode)));
+    updateMode('study');
+
+    runBtn.addEventListener('click', async () => {
+      const text = inputText.value.trim();
+      if (!text) { alert('입력 내용을 작성해 주세요.'); return; }
+
+      runBtn.disabled = true;
+      runBtn.textContent = '생성 중...';
+      progressWrap.style.display = 'block';
+      progressFill.style.width = '10%';
+      progressText.textContent = '응답 생성 중...';
+      result.textContent = 'AI 응답을 생성 중입니다...';
+
+      const eventSource = new EventSource(`/api/assistant_stream?mode=${encodeURIComponent(currentMode)}&text=${encodeURIComponent(text)}`);
+      let done = false;
+      let fullText = '';
+
+      eventSource.onmessage = () => {};
+      eventSource.addEventListener('progress', (event) => {
+        const data = JSON.parse(event.data);
+        progressFill.style.width = data.progress + '%';
+        progressText.textContent = '응답 생성 중... (' + data.progress + '%) - ' + (data.message || '');
+      });
+
+      eventSource.addEventListener('delta', (event) => {
+        const data = JSON.parse(event.data);
+        if (!done) {
+          fullText += data.text || '';
+          renderResult(fullText, currentMode);
+        }
+      });
+
+      eventSource.addEventListener('done', (event) => {
+        const data = JSON.parse(event.data);
+        done = true;
+        progressFill.style.width = '100%';
+        progressText.textContent = '응답 생성 완료';
+        fullText = data.text || '';
+        renderResult(fullText, currentMode);
+        eventSource.close();
+        runBtn.disabled = false;
+        runBtn.textContent = '실행하기';
+        setTimeout(() => { progressWrap.style.display = 'none'; }, 600);
+      });
+
+      eventSource.addEventListener('error', (event) => {
+        const data = JSON.parse(event.data || '{"error":"응답 생성에 실패했습니다."}');
+        done = true;
+        progressFill.style.width = '0%';
+        progressText.textContent = '응답 생성 실패';
+        result.textContent = '오류: ' + (data.error || '응답 생성에 실패했습니다.');
+        eventSource.close();
+        runBtn.disabled = false;
+        runBtn.textContent = '실행하기';
+        setTimeout(() => { progressWrap.style.display = 'none'; }, 600);
+      });
+
+      eventSource.onerror = () => {
+        if (!done) {
+          eventSource.close();
+          done = true;
+          progressFill.style.width = '0%';
+          progressText.textContent = '응답 생성 실패';
+          result.textContent = '오류: 응답 스트림이 종료되었습니다.';
+          runBtn.disabled = false;
+          runBtn.textContent = '실행하기';
+          setTimeout(() => { progressWrap.style.display = 'none'; }, 600);
+        }
+      };
+    });
+  </script>
+</body>
+</html>
